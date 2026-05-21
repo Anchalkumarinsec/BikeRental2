@@ -42,7 +42,7 @@ const BookingFlow = () => {
   useEffect(() => {
     const fetchVehicle = async () => {
       try {
-        const res = await axios.get(`http://localhost:5000/api/vehicles/${id}`);
+        const res = await axios.get(`${import.meta.env.VITE_API_URL || `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}`}/api/vehicles/${id}`);
         setVehicle(res.data);
       } catch (err) {
         console.error(err);
@@ -91,7 +91,7 @@ const BookingFlow = () => {
       }
 
       // 1. Create order on backend
-      const orderRes = await axios.post('http://localhost:5000/api/bookings/create-order', {
+      const orderRes = await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/bookings/create-order`, {
         vehicleId: vehicle._id,
         durationHours,
         startDate: pickupDate
@@ -112,7 +112,7 @@ const BookingFlow = () => {
         handler: async function (response) {
           // 3. Verify Payment
           try {
-            const verifyRes = await axios.post('http://localhost:5000/api/bookings/verify-payment', {
+            const verifyRes = await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/bookings/verify-payment`, {
               razorpay_order_id: response.razorpay_order_id,
               razorpay_payment_id: response.razorpay_payment_id,
               razorpay_signature: response.razorpay_signature,

@@ -1,6 +1,7 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { LogOut, Moon, Sun } from 'lucide-react';
 import { useTheme } from '../contexts/ThemeContext';
+import NotificationBell from './NotificationBell';
 
 const Navbar = () => {
   const location = useLocation();
@@ -53,13 +54,16 @@ const Navbar = () => {
           </button>
 
           {user ? (
-            <button 
-              onClick={handleLogout}
-              className="flex items-center space-x-2 text-sm font-bold text-slate-500 dark:text-zinc-400 hover:text-red-500 dark:hover:text-red-500 transition-colors"
-            >
-              <LogOut size={18} />
-              <span>Sign Out</span>
-            </button>
+            <div className="flex items-center space-x-4">
+              <NotificationBell />
+              <button 
+                onClick={handleLogout}
+                className="flex items-center space-x-2 text-sm font-bold text-slate-500 dark:text-zinc-400 hover:text-red-500 dark:hover:text-red-500 transition-colors"
+              >
+                <LogOut size={18} />
+                <span>Sign Out</span>
+              </button>
+            </div>
           ) : (
             <div className="hidden sm:flex items-center space-x-4">
               <Link to="/login" className="text-sm font-bold text-slate-900 dark:text-white hover:text-orange-500 dark:hover:text-orange-500 transition-colors">Log In</Link>

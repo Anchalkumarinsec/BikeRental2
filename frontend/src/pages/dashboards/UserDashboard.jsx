@@ -1,53 +1,63 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { User, MapPin, History, LayoutDashboard, Wallet, CreditCard, Settings, ChevronRight, Navigation, Bell, CheckCircle, XCircle, Battery, Star } from 'lucide-react';
+import { User, MapPin, History, LayoutDashboard, Wallet, CreditCard, Settings, ChevronRight, Navigation, Bell, CheckCircle, XCircle, Battery, Star, MessageCircle } from 'lucide-react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import axios from 'axios';
-import { io } from 'socket.io-client';
+import { useNotification } from '../../contexts/NotificationContext';
+import LenderMessagesTab from './LenderMessagesTab';
 
 const UserDashboard = () => {
   const [activeTab, setActiveTab] = useState('overview');
   const [toast, setToast] = useState(null); // { type: 'success'|'error', message }
-  const socketRef = useRef(null);
+  const { socket } = useNotification();
   const [searchParams] = useSearchParams();
 
   const userString = localStorage.getItem('user');
   const user = userString ? JSON.parse(userString) : { name: 'User', role: 'user' };
   const initials = user.name ? user.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() : 'U';
 
-  // Switch to bookings tab from URL params (after BookingFlow redirect)
+  // Switch tab from URL params (e.g., from notifications or BookingFlow redirect)
   useEffect(() => {
-    if (searchParams.get('tab') === 'bookings') {
-      setActiveTab('bookings');
-      if (searchParams.get('confirmed')) {
-        showToast('success', '🎉 Booking confirmed! Your ride is ready.');
-      } else if (searchParams.get('pending')) {
-        showToast('info', '⏳ Payment received! Awaiting lender confirmation.');
+    const tab = searchParams.get('tab');
+    if (tab) {
+      setActiveTab(tab);
+      if (tab === 'bookings') {
+        if (searchParams.get('confirmed')) {
+          showToast('success', '🎉 Booking confirmed! Your ride is ready.');
+        } else if (searchParams.get('pending')) {
+          showToast('info', '⏳ Payment received! Awaiting lender confirmation.');
+        }
       }
     }
-  }, []);
+  }, [searchParams]);
 
   // Socket.IO — join user room for notifications
   useEffect(() => {
-    if (!user?._id) return;
-    socketRef.current = io('http://localhost:5000');
-    socketRef.current.emit('join-user-room', user._id);
+    if (!socket || !user?._id) return;
 
-    socketRef.current.on('booking-confirmed', ({ vehicleName, message }) => {
+    const handleBookingConfirmed = ({ vehicleName, message }) => {
       showToast('success', `✅ ${message}`);
       // Refresh bookings tab
       setActiveTab(prev => prev); // trigger re-render trick
-    });
+    };
 
-    socketRef.current.on('booking-rejected', ({ vehicleName, message }) => {
+    const handleBookingRejected = ({ vehicleName, message }) => {
       showToast('error', `❌ ${message}`);
-    });
+    };
 
-    socketRef.current.on('new-booking-request', ({ message }) => {
+    const handleNewBookingRequest = ({ message }) => {
       showToast('info', `📨 ${message}`);
-    });
+    };
 
-    return () => socketRef.current?.disconnect();
-  }, [user?._id]);
+    socket.on('booking-confirmed', handleBookingConfirmed);
+    socket.on('booking-rejected', handleBookingRejected);
+    socket.on('new-booking-request', handleNewBookingRequest);
+
+    return () => {
+      socket.off('booking-confirmed', handleBookingConfirmed);
+      socket.off('booking-rejected', handleBookingRejected);
+      socket.off('new-booking-request', handleNewBookingRequest);
+    };
+  }, [socket, user?._id]);
 
   const showToast = (type, message) => {
     setToast({ type, message });
@@ -59,6 +69,7 @@ const UserDashboard = () => {
       case 'overview': return <OverviewTab />;
       case 'profile': return <ProfileTab />;
       case 'bookings': return <BookingsTab />;
+      case 'messages': return <LenderMessagesTab />;
       case 'wallet': return <WalletTab />;
       default: return <OverviewTab />;
     }
@@ -102,6 +113,10 @@ const UserDashboard = () => {
                 <SidebarItem 
                   icon={<User />} label="Profile & KYC" 
                   active={activeTab === 'profile'} onClick={() => setActiveTab('profile')} 
+                />
+                <SidebarItem 
+                  icon={<MessageCircle />} label="Messages" 
+                  active={activeTab === 'messages'} onClick={() => setActiveTab('messages')} 
                 />
                 <SidebarItem 
                   icon={<History />} label="My Bookings" 
@@ -153,7 +168,7 @@ const OverviewTab = () => {
     setLoading(true);
     setFallbackMessage(null);
     try {
-      let url = 'http://localhost:5000/api/vehicles?';
+      let url = `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/vehicles?`;
       if (search) url += `search=${encodeURIComponent(search)}&`;
       if (lat && lng) url += `lat=${lat}&lng=${lng}&radius=50`;
       
@@ -161,7 +176,7 @@ const OverviewTab = () => {
       
       if ((search || (lat && lng)) && res.data.length === 0) {
         setFallbackMessage(`No vehicles found near ${search || 'your location'}. Showing other available vehicles.`);
-        const fallbackRes = await axios.get('http://localhost:5000/api/vehicles');
+        const fallbackRes = await axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/vehicles`);
         setVehicles(fallbackRes.data.slice(0, 4));
       } else {
         setVehicles(res.data.slice(0, 4)); // Show up to 4 nearby
@@ -220,7 +235,7 @@ const OverviewTab = () => {
     setAiLoading(true);
     setAiMessage(null);
     try {
-      const res = await axios.post('http://localhost:5000/api/ai/recommend', { query: aiQuery });
+      const res = await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/ai/recommend`, { query: aiQuery });
       setAiMessage(res.data.message);
       setAiRecommendedIds(res.data.recommendedIds || []);
     } catch (err) {
@@ -365,7 +380,7 @@ const ProfileTab = () => {
     const fetchProfile = async () => {
       try {
         const token = localStorage.getItem('token');
-        const res = await axios.get('http://localhost:5000/api/users/profile', {
+        const res = await axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/users/profile`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         setProfile(res.data);
@@ -386,7 +401,7 @@ const ProfileTab = () => {
       const formData = new FormData();
       formData.append('kycDocument', kycFile);
 
-      const res = await axios.post('http://localhost:5000/api/users/kyc/upload', formData, {
+      const res = await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/users/kyc/upload`, formData, {
         headers: { 
           Authorization: `Bearer ${token}`,
           'Content-Type': 'multipart/form-data'
@@ -406,7 +421,7 @@ const ProfileTab = () => {
     setSaving(true);
     try {
       const token = localStorage.getItem('token');
-      const res = await axios.put('http://localhost:5000/api/users/profile', editData, {
+      const res = await axios.put(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/users/profile`, editData, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setProfile(res.data);
@@ -538,7 +553,7 @@ const BookingsTab = () => {
     const fetchBookings = async () => {
       try {
         const token = localStorage.getItem('token');
-        const res = await axios.get('http://localhost:5000/api/bookings/my-bookings', {
+        const res = await axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/bookings/my-bookings`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         setBookings(res.data);

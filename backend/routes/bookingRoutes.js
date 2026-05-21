@@ -5,6 +5,7 @@ const Razorpay = require('razorpay');
 const { protect, lender } = require('../middleware/authMiddleware');
 const Booking = require('../models/Booking');
 const Vehicle = require('../models/Vehicle');
+const sendNotification = require('../utils/notify');
 
 // Initialize Razorpay
 const razorpay = new Razorpay({
@@ -121,6 +122,13 @@ router.post('/verify-payment', protect, async (req, res) => {
         vehicleName: vehicle.name,
         message: `Your booking for ${vehicle.name} is confirmed!`
       });
+      await sendNotification(req.app, {
+        recipient: req.user._id,
+        type: 'booking',
+        title: 'Booking Confirmed',
+        content: `Your booking for ${vehicle.name} is confirmed!`,
+        link: '/dashboard/user'
+      });
     } else {
       // Notify lender of new pending request
       if (io && vehicle.vendorId?._id) {
@@ -129,6 +137,13 @@ router.post('/verify-payment', protect, async (req, res) => {
           vehicleName: vehicle.name,
           userName: req.user.name,
           message: `New booking request for ${vehicle.name}`
+        });
+        await sendNotification(req.app, {
+          recipient: vehicle.vendorId._id,
+          type: 'booking',
+          title: 'New Booking Request',
+          content: `${req.user.name} wants to book your ${vehicle.name}`,
+          link: '/dashboard/lender'
         });
       }
     }
@@ -244,12 +259,26 @@ router.put('/:id/status', protect, lender, async (req, res) => {
         vehicleName: booking.vehicle.name,
         message: `Your booking for ${booking.vehicle.name} has been confirmed! You can now track your ride.`
       });
+      await sendNotification(req.app, {
+        recipient: booking.user,
+        type: 'booking',
+        title: 'Booking Confirmed',
+        content: `Your booking for ${booking.vehicle.name} has been confirmed!`,
+        link: '/dashboard/user'
+      });
     } else if (status === 'cancelled') {
       await Vehicle.findByIdAndUpdate(booking.vehicle._id, { isAvailable: true });
       if (io) io.to(`user-${booking.user}`).emit('booking-rejected', {
         bookingId: booking._id,
         vehicleName: booking.vehicle.name,
         message: `Sorry, your booking for ${booking.vehicle.name} was declined by the lender.`
+      });
+      await sendNotification(req.app, {
+        recipient: booking.user,
+        type: 'booking',
+        title: 'Booking Declined',
+        content: `Your booking for ${booking.vehicle.name} was declined by the lender.`,
+        link: '/dashboard/user'
       });
     } else if (status === 'completed' && booking.lastKnownLocation) {
       await Vehicle.findByIdAndUpdate(booking.vehicle._id, {

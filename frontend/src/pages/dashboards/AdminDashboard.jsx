@@ -9,7 +9,7 @@ const AdminDashboard = () => {
   const fetchPendingKyc = async () => {
     try {
       const token = localStorage.getItem('token');
-      const res = await axios.get('http://localhost:5000/api/users/kyc-pending', {
+      const res = await axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/users/kyc-pending`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setPendingKyc(res.data);
@@ -27,7 +27,7 @@ const AdminDashboard = () => {
   const handleKycAction = async (userId, action) => {
     try {
       const token = localStorage.getItem('token');
-      await axios.put(`http://localhost:5000/api/users/kyc/${userId}/${action}`, {}, {
+      await axios.put(`${import.meta.env.VITE_API_URL || `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}`}/api/users/kyc/${userId}/${action}`, {}, {
         headers: { Authorization: `Bearer ${token}` }
       });
       // Remove the processed request from the UI
@@ -73,7 +73,7 @@ const AdminDashboard = () => {
                     
                     <div className="flex items-center space-x-3">
                       <a 
-                        href={`http://localhost:5000${user.kycDocumentUrl}`} 
+                        href={`${import.meta.env.VITE_API_URL || `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}`}${user.kycDocumentUrl}`} 
                         target="_blank" 
                         rel="noreferrer"
                         className="flex items-center space-x-2 px-4 py-2 bg-zinc-100 dark:bg-zinc-800 text-slate-700 dark:text-zinc-300 font-bold rounded-xl hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"

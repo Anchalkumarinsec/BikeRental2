@@ -11,14 +11,16 @@ import VehicleDetails from './pages/user/VehicleDetails';
 import BookingFlow from './pages/user/BookingFlow';
 import BookingTracking from './pages/user/BookingTracking';
 import { ThemeProvider } from './contexts/ThemeContext';
+import { NotificationProvider } from './contexts/NotificationContext';
 import AIChatWidget from './components/AIChatWidget';
 
 function App() {
   return (
     <ThemeProvider>
       <Router>
-        <div className="flex flex-col min-h-screen">
-          <Navbar />
+        <NotificationProvider>
+          <div className="flex flex-col min-h-screen">
+            <Navbar />
           <main className="flex-grow">
             <Routes>
               <Route path="/" element={<Landing />} />
@@ -34,8 +36,9 @@ function App() {
               <Route path="/tracking/:bookingId" element={<BookingTracking />} />
             </Routes>
           </main>
-          <AIChatWidget />
-        </div>
+            <AIChatWidget />
+          </div>
+        </NotificationProvider>
       </Router>
     </ThemeProvider>
   );

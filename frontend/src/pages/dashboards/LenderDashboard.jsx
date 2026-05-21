@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { createPortal } from 'react-dom';
-import { Bike, DollarSign, Activity, Settings, Plus, MapPin, CheckCircle, XCircle, Navigation, Trash2, Bell, Zap, Hand } from 'lucide-react';
+import { Bike, DollarSign, Activity, Settings, Plus, MapPin, CheckCircle, XCircle, Navigation, Trash2, Bell, Zap, Hand, MessageCircle } from 'lucide-react';
 import axios from 'axios';
-import { io } from 'socket.io-client';
 import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-leaflet';
+import LenderMessagesTab from './LenderMessagesTab';
+import { useNotification } from '../../contexts/NotificationContext';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 
@@ -35,7 +37,8 @@ const LenderDashboard = () => {
   const [error, setError] = useState('');
   const [newRequestCount, setNewRequestCount] = useState(0);
   const [toast, setToast] = useState(null);
-  const socketRef = useRef(null);
+  const { socket } = useNotification();
+  const [searchParams] = useSearchParams();
 
   const userString = localStorage.getItem('user');
   const user = userString ? JSON.parse(userString) : {};
@@ -45,18 +48,30 @@ const LenderDashboard = () => {
     setTimeout(() => setToast(null), 6000);
   };
 
+  // Switch tab from URL params (e.g., from notifications)
+  useEffect(() => {
+    const tab = searchParams.get('tab');
+    if (tab) {
+      setActiveTab(tab);
+    }
+  }, [searchParams]);
+
   // Socket.IO — join lender's personal room for booking notifications
   useEffect(() => {
-    if (!user?._id) return;
-    socketRef.current = io('http://localhost:5000');
-    socketRef.current.emit('join-user-room', user._id);
-    socketRef.current.on('new-booking-request', ({ vehicleName, userName }) => {
+    if (!socket || !user?._id) return;
+
+    const handleNewRequest = ({ vehicleName, userName }) => {
       setNewRequestCount(prev => prev + 1);
       showToast('info', `📨 ${userName} requested ${vehicleName}`);
       fetchData();
-    });
-    return () => socketRef.current?.disconnect();
-  }, [user?._id]);
+    };
+
+    socket.on('new-booking-request', handleNewRequest);
+    
+    return () => {
+      socket.off('new-booking-request', handleNewRequest);
+    };
+  }, [socket, user?._id]);
 
   // Stats
   const [totalEarnings, setTotalEarnings] = useState(0);
@@ -73,8 +88,8 @@ const LenderDashboard = () => {
       const config = { headers: { Authorization: `Bearer ${token}` } };
       
       const [vehiclesRes, requestsRes] = await Promise.all([
-        axios.get('http://localhost:5000/api/vehicles/vendor/my-vehicles', config),
-        axios.get('http://localhost:5000/api/bookings/vendor/requests', config)
+        axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/vehicles/vendor/my-vehicles`, config),
+        axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/bookings/vendor/requests`, config)
       ]);
 
       setVehicles(vehiclesRes.data);
@@ -101,7 +116,7 @@ const LenderDashboard = () => {
   const handleUpdateBookingStatus = async (bookingId, status) => {
     try {
       const token = localStorage.getItem('token');
-      await axios.put(`http://localhost:5000/api/bookings/${bookingId}/status`, { status }, {
+      await axios.put(`${import.meta.env.VITE_API_URL || `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}`}/api/bookings/${bookingId}/status`, { status }, {
         headers: { Authorization: `Bearer ${token}` }
       });
       fetchData(); // Refresh data
@@ -134,6 +149,7 @@ const LenderDashboard = () => {
                   <span className="w-5 h-5 bg-red-500 text-white text-xs font-black rounded-full flex items-center justify-center animate-pulse">{newRequestCount}</span>
                 )}
               </button>
+              <SidebarItem icon={<MessageCircle size={18} />} label="Messages" active={activeTab === 'messages'} onClick={() => setActiveTab('messages')} />
             </nav>
           </div>
         </div>
@@ -169,6 +185,9 @@ const LenderDashboard = () => {
               )}
               {activeTab === 'requests' && (
                 <RequestsTab requests={requests} onUpdateStatus={handleUpdateBookingStatus} refreshData={fetchData} />
+              )}
+              {activeTab === 'messages' && (
+                <LenderMessagesTab />
               )}
             </>
           )}
@@ -210,7 +229,7 @@ const VehiclesTab = ({ vehicles, refreshData }) => {
   const toggleAvailability = async (vehicle) => {
     try {
       const token = localStorage.getItem('token');
-      await axios.put(`http://localhost:5000/api/vehicles/${vehicle._id}`,
+      await axios.put(`${import.meta.env.VITE_API_URL || `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}`}/api/vehicles/${vehicle._id}`,
         { isAvailable: !vehicle.isAvailable },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -225,7 +244,7 @@ const VehiclesTab = ({ vehicles, refreshData }) => {
     setDeletingId(vehicle._id);
     try {
       const token = localStorage.getItem('token');
-      await axios.delete(`http://localhost:5000/api/vehicles/${vehicle._id}`, {
+      await axios.delete(`${import.meta.env.VITE_API_URL || `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}`}/api/vehicles/${vehicle._id}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       refreshData();
@@ -239,7 +258,7 @@ const VehiclesTab = ({ vehicles, refreshData }) => {
   const toggleAutoConfirm = async (vehicle) => {
     try {
       const token = localStorage.getItem('token');
-      await axios.put(`http://localhost:5000/api/vehicles/${vehicle._id}`,
+      await axios.put(`${import.meta.env.VITE_API_URL || `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}`}/api/vehicles/${vehicle._id}`,
         { autoConfirm: !vehicle.autoConfirm },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -493,7 +512,7 @@ const AddVehicleModal = ({ onClose, onAdd }) => {
     }
     setAiPricingLoading(true);
     try {
-      const res = await axios.post('http://localhost:5000/api/ai/suggest-price', {
+      const res = await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/ai/suggest-price`, {
         type: formData.type,
         name: formData.name,
         location: formData.location,
@@ -525,13 +544,13 @@ const AddVehicleModal = ({ onClose, onAdd }) => {
       if (file) {
         const uploadData = new FormData();
         uploadData.append('image', file);
-        const uploadRes = await axios.post('http://localhost:5000/api/vehicles/upload', uploadData, {
+        const uploadRes = await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/vehicles/upload`, uploadData, {
           headers: { ...config.headers, 'Content-Type': 'multipart/form-data' }
         });
         imageUrl = uploadRes.data.imageUrl;
       }
 
-      await axios.post('http://localhost:5000/api/vehicles', {
+      await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/vehicles`, {
         ...formData,
         pricePerHour: Number(formData.pricePerHour),
         pricePerDay: Number(formData.pricePerDay),
@@ -679,7 +698,7 @@ const LocationConfirmModal = ({ booking, onClose, onConfirm }) => {
     try {
       const token = localStorage.getItem('token');
       await axios.put(
-        `http://localhost:5000/api/vehicles/${booking.vehicle?._id}`,
+        `${import.meta.env.VITE_API_URL || `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}`}/api/vehicles/${booking.vehicle?._id}`,
         { locationCoordinates: { lat: pinCoords[0], lng: pinCoords[1] } },
         { headers: { Authorization: `Bearer ${token}` } }
       );

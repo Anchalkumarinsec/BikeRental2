@@ -22,7 +22,7 @@ const Login = () => {
 
     if (step === 1) {
       try {
-        const response = await axios.post('http://localhost:5000/api/auth/login', formData);
+        const response = await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/auth/login`, formData);
         setStep(2); // Move to OTP step
       } catch (err) {
         setError(err.response?.data?.message || 'Login failed. Invalid credentials.');
@@ -32,7 +32,7 @@ const Login = () => {
     } else {
       // Step 2: Verify OTP
       try {
-        const response = await axios.post('http://localhost:5000/api/auth/verify-otp', {
+        const response = await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/auth/verify-otp`, {
           email: formData.email,
           otp
         });

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { MapPin, Battery, Star, Shield, Calendar, Clock, Zap, Navigation } from 'lucide-react';
+import { MapPin, Battery, Star, Shield, Calendar, Clock, Zap, Navigation, MessageCircle } from 'lucide-react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
+import ChatWidget from '../../components/ChatWidget';
 import axios from 'axios';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -22,6 +23,7 @@ const VehicleDetails = () => {
   const [vehicle, setVehicle] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [isChatOpen, setIsChatOpen] = useState(false);
 
   // Local state for booking selections
   const [pickupDate, setPickupDate] = useState(() => {
@@ -37,7 +39,7 @@ const VehicleDetails = () => {
   useEffect(() => {
     const fetchVehicle = async () => {
       try {
-        const res = await axios.get(`http://localhost:5000/api/vehicles/${id}`);
+        const res = await axios.get(`${import.meta.env.VITE_API_URL || `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}`}/api/vehicles/${id}`);
         setVehicle(res.data);
       } catch (err) {
         console.error(err);
@@ -226,18 +228,35 @@ const VehicleDetails = () => {
               {vehicle.isAvailable ? (
                 <button 
                   onClick={() => navigate(`/book/${id}?date=${pickupDate}&duration=${durationHours}`)}
-                  className="w-full block text-center py-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold rounded-full hover:bg-orange-500 dark:hover:bg-orange-500 dark:hover:text-white transition-colors shadow-lg"
+                  className="w-full block text-center py-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold rounded-full hover:bg-orange-500 dark:hover:bg-orange-500 dark:hover:text-white transition-colors shadow-lg mb-4"
                 >
                   Proceed to Book
                 </button>
               ) : (
-                <button disabled className="w-full block text-center py-4 bg-zinc-200 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-500 font-bold rounded-full cursor-not-allowed">
+                <button disabled className="w-full block text-center py-4 bg-zinc-200 dark:bg-zinc-800 text-zinc-500 dark:text-zinc-500 font-bold rounded-full cursor-not-allowed mb-4">
                   Currently Unavailable
+                </button>
+              )}
+
+              {vehicle.vendorId && (
+                <button 
+                  onClick={() => setIsChatOpen(true)}
+                  className="w-full flex items-center justify-center gap-2 block text-center py-4 bg-orange-50 dark:bg-orange-500/10 text-orange-600 dark:text-orange-500 font-bold rounded-full hover:bg-orange-100 dark:hover:bg-orange-500/20 transition-colors"
+                >
+                  <MessageCircle className="w-5 h-5" /> Chat with Lender
                 </button>
               )}
             </div>
           </div>
         </div>
+
+        {isChatOpen && vehicle.vendorId && (
+          <ChatWidget 
+            recipientId={vehicle.vendorId} 
+            vehicle={vehicle}
+            onClose={() => setIsChatOpen(false)} 
+          />
+        )}
 
       </div>
     </div>

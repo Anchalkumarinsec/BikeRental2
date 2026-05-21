@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { MapPin, Navigation, Clock, AlertTriangle, Play, Pause, RotateCcw, ExternalLink, Footprints, ArrowLeft } from 'lucide-react';
 import axios from 'axios';
-import { io } from 'socket.io-client';
+import { useNotification } from '../../contexts/NotificationContext';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
@@ -60,7 +60,7 @@ const BookingTracking = () => {
   const [isExpired, setIsExpired] = useState(false);
   const [flyTarget, setFlyTarget] = useState(null);
 
-  const socketRef = useRef(null);
+  const { socket } = useNotification();
   const watchRef = useRef(null);
   const postIntervalRef = useRef(null);
   const replayTimerRef = useRef(null);
@@ -72,7 +72,7 @@ const BookingTracking = () => {
     const fetch = async () => {
       try {
         const token = localStorage.getItem('token');
-        const res = await axios.get(`http://localhost:5000/api/bookings/${bookingId}`, {
+        const res = await axios.get(`${import.meta.env.VITE_API_URL || `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}`}/api/bookings/${bookingId}`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         const bk = res.data;
@@ -143,7 +143,7 @@ const BookingTracking = () => {
     postIntervalRef.current = setInterval(() => {
       const c = latestCoordsRef.current;
       if (!c) return;
-      axios.put(`http://localhost:5000/api/bookings/${bookingId}/live-location`,
+      axios.put(`${import.meta.env.VITE_API_URL || `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}`}/api/bookings/${bookingId}/live-location`,
         { lat: c[0], lng: c[1], speed: liveSpeed },
         { headers: { Authorization: `Bearer ${token}` } }
       ).catch(() => {});
@@ -159,10 +159,10 @@ const BookingTracking = () => {
 
   // ── Socket.IO ──
   useEffect(() => {
-    socketRef.current = io('http://localhost:5000');
-    socketRef.current.emit('join-booking-room', bookingId);
-    return () => socketRef.current?.disconnect();
-  }, [bookingId]);
+    if (!socket) return;
+    socket.emit('join-booking-room', bookingId);
+    // Note: We don't disconnect the socket here because it's shared globally
+  }, [bookingId, socket]);
 
   // ── Ride timer ──
   useEffect(() => {
@@ -185,7 +185,7 @@ const BookingTracking = () => {
   const fetchReplay = async () => {
     try {
       const token = localStorage.getItem('token');
-      const r = await axios.get(`http://localhost:5000/api/bookings/${bookingId}/route`, { headers: { Authorization: `Bearer ${token}` } });
+      const r = await axios.get(`${import.meta.env.VITE_API_URL || `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}`}/api/bookings/${bookingId}/route`, { headers: { Authorization: `Bearer ${token}` } });
       if (r.data.routeHistory?.length > 0) {
         setReplayHistory(r.data.routeHistory.map(p => [p.lat, p.lng]));
       }
@@ -208,7 +208,6 @@ const BookingTracking = () => {
     if (watchRef.current) navigator.geolocation.clearWatch(watchRef.current);
     clearInterval(postIntervalRef.current);
     clearInterval(replayTimerRef.current);
-    socketRef.current?.disconnect();
   };
 
   const openGoogleMaps = () => {

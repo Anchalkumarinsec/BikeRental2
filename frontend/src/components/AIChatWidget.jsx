@@ -30,7 +30,7 @@ const AIChatWidget = () => {
 
     try {
       // Fetch response from our backend AI endpoint
-      const res = await axios.post('http://localhost:5000/api/ai/chat', {
+      const res = await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/ai/chat`, {
         messages: [...messages, userMessage].map(m => ({ role: m.role, content: m.content }))
       });
 

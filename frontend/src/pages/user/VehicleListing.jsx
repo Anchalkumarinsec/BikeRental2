@@ -42,7 +42,7 @@ const VehicleListing = () => {
         params.append('maxPrice', filters.maxPrice);
       }
 
-      const res = await axios.get(`http://localhost:5000/api/vehicles?${params.toString()}`, {
+      const res = await axios.get(`${import.meta.env.VITE_API_URL || `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}`}/api/vehicles?${params.toString()}`, {
         timeout: 10000  // 10 second timeout to prevent infinite loading
       });
       setVehicles(res.data);
@@ -78,7 +78,7 @@ const VehicleListing = () => {
     setAiLoading(true);
     setAiMessage(null);
     try {
-      const res = await axios.post('http://localhost:5000/api/ai/recommend', { query: aiQuery });
+      const res = await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/ai/recommend`, { query: aiQuery });
       setAiMessage(res.data.message);
       setAiRecommendedIds(res.data.recommendedIds || []);
     } catch (err) {
