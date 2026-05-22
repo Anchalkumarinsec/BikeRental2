@@ -46,6 +46,8 @@ const Login = () => {
           navigate('/dashboard/admin');
         } else if (response.data.role === 'lender') {
           navigate('/dashboard/lender');
+        } else if (response.data.role === 'delivery_agent') {
+          navigate('/dashboard/delivery-agent');
         } else {
           navigate('/dashboard/user');
         }

@@ -33,6 +33,7 @@ app.use('/api/bookings', require('./routes/bookingRoutes'));
 app.use('/api/ai', require('./routes/aiRoutes'));
 app.use('/api/messages', require('./routes/messageRoutes'));
 app.use('/api/notifications', require('./routes/notificationRoutes'));
+app.use('/api/delivery', require('./routes/deliveryRoutes'));
 
 // Serve static files
 const path = require('path');

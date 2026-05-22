@@ -31,7 +31,7 @@ const registerUser = async (req, res) => {
       return res.status(400).json({ message: 'User already exists' });
     }
 
-    const assignedRole = (role === 'lender' || role === 'user' || role === 'admin') ? role : 'user';
+    const assignedRole = (role === 'lender' || role === 'user' || role === 'admin' || role === 'delivery_agent') ? role : 'user';
 
     const salt = await require('bcryptjs').genSalt(10);
     const hashedPassword = await require('bcryptjs').hash(password, salt);

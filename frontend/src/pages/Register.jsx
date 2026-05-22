@@ -106,6 +106,7 @@ const Register = () => {
             >
               <option value="user">Rent Vehicles (User)</option>
               <option value="lender">List My Vehicles (Lender)</option>
+              <option value="delivery_agent">Work as Delivery Agent</option>
             </select>
           </div>
 

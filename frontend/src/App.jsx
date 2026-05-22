@@ -6,6 +6,7 @@ import Register from './pages/Register';
 import UserDashboard from './pages/dashboards/UserDashboard';
 import LenderDashboard from './pages/dashboards/LenderDashboard';
 import AdminDashboard from './pages/dashboards/AdminDashboard';
+import DeliveryAgentDashboard from './pages/dashboards/DeliveryAgentDashboard';
 import VehicleListing from './pages/user/VehicleListing';
 import VehicleDetails from './pages/user/VehicleDetails';
 import BookingFlow from './pages/user/BookingFlow';
@@ -29,6 +30,7 @@ function App() {
               <Route path="/dashboard/user" element={<UserDashboard />} />
               <Route path="/dashboard/lender" element={<LenderDashboard />} />
               <Route path="/dashboard/admin" element={<AdminDashboard />} />
+              <Route path="/dashboard/delivery-agent" element={<DeliveryAgentDashboard />} />
               <Route path="/vehicles" element={<VehicleListing />} />
               <Route path="/vehicles/:id" element={<VehicleDetails />} />
               <Route path="/book/:id" element={<BookingFlow />} />

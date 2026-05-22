@@ -1,7 +1,31 @@
 import { useState, useEffect } from 'react';
 import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { CreditCard, CheckCircle, Clock } from 'lucide-react';
+import { CreditCard, CheckCircle, Clock, Truck, MapPin, Search } from 'lucide-react';
 import axios from 'axios';
+import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+import L from 'leaflet';
+import icon from 'leaflet/dist/images/marker-icon.png';
+import iconShadow from 'leaflet/dist/images/marker-shadow.png';
+
+let DefaultIcon = L.icon({
+    iconUrl: icon,
+    shadowUrl: iconShadow,
+    iconSize: [25, 41],
+    iconAnchor: [12, 41]
+});
+L.Marker.prototype.options.icon = DefaultIcon;
+
+const MapClickPicker = ({ onPick }) => {
+  useMapEvents({ click(e) { onPick([e.latlng.lat, e.latlng.lng]); } });
+  return null;
+};
+
+const FlyTo = ({ center }) => {
+  const map = useMap();
+  useEffect(() => { if (center) map.flyTo(center, 15, { duration: 1 }); }, [center]);
+  return null;
+};
 
 const BookingFlow = () => {
   const { id } = useParams();
@@ -24,6 +48,19 @@ const BookingFlow = () => {
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState('');
 
+  // Delivery States
+  const [deliveryOption, setDeliveryOption] = useState('self_pickup');
+  const [deliveryAddress, setDeliveryAddress] = useState('');
+  const [deliveryCoordinates, setDeliveryCoordinates] = useState(null);
+  const [deliveryCharge, setDeliveryCharge] = useState(0);
+  const [osrmDistance, setOsrmDistance] = useState(null);
+  const [deliveryError, setDeliveryError] = useState('');
+  
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searching, setSearching] = useState(false);
+  const [gpsLoading, setGpsLoading] = useState(false);
+  const [mapCenter, setMapCenter] = useState([20.5937, 78.9629]);
+
   // Load Razorpay script dynamically
   useEffect(() => {
     const loadRazorpay = () => {
@@ -42,8 +79,11 @@ const BookingFlow = () => {
   useEffect(() => {
     const fetchVehicle = async () => {
       try {
-        const res = await axios.get(`${import.meta.env.VITE_API_URL || `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}`}/api/vehicles/${id}`);
+        const res = await axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/vehicles/${id}`);
         setVehicle(res.data);
+        if (res.data.locationCoordinates) {
+          setMapCenter([res.data.locationCoordinates.lat, res.data.locationCoordinates.lng]);
+        }
       } catch (err) {
         console.error(err);
         setError('Vehicle not found');
@@ -53,6 +93,121 @@ const BookingFlow = () => {
     };
     fetchVehicle();
   }, [id]);
+
+  // Handle Location Search
+  const handleLocationSearch = async () => {
+    if (!searchQuery.trim()) return;
+    setSearching(true);
+    setDeliveryError('');
+    try {
+      const res = await axios.get(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery)}&limit=1`,
+        { headers: { 'Accept-Language': 'en' } }
+      );
+      if (res.data?.length > 0) {
+        const { lat, lon, display_name } = res.data[0];
+        const c = [parseFloat(lat), parseFloat(lon)];
+        setMapCenter(c);
+        setDeliveryCoordinates({ lat: c[0], lng: c[1] });
+        setDeliveryAddress(display_name);
+      } else {
+        setDeliveryError('Location not found.');
+      }
+    } catch {
+      setDeliveryError('Search failed.');
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const requestGPS = () => {
+    if (!navigator.geolocation) {
+      setDeliveryError('Geolocation is not supported by your browser.');
+      return;
+    }
+    setGpsLoading(true);
+    setDeliveryError('');
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const c = [pos.coords.latitude, pos.coords.longitude];
+        setMapCenter(c);
+        setDeliveryCoordinates({ lat: c[0], lng: c[1] });
+        // Try reverse geocode to get address
+        try {
+          const res = await axios.get(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${c[0]}&lon=${c[1]}`);
+          if (res.data && res.data.display_name) {
+             setDeliveryAddress(res.data.display_name);
+             setSearchQuery(res.data.display_name);
+          } else {
+             setDeliveryAddress('Current Location (GPS)');
+          }
+        } catch {
+          setDeliveryAddress('Current Location (GPS)');
+        }
+        setGpsLoading(false);
+      },
+      () => {
+        setDeliveryError('Unable to retrieve your location.');
+        setGpsLoading(false);
+      },
+      { enableHighAccuracy: true, timeout: 8000 }
+    );
+  };
+
+  const handleMapClick = async (c) => {
+    setMapCenter(c);
+    setDeliveryCoordinates({ lat: c[0], lng: c[1] });
+    try {
+      const res = await axios.get(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${c[0]}&lon=${c[1]}`);
+      if (res.data && res.data.display_name) {
+         setDeliveryAddress(res.data.display_name);
+         setSearchQuery(res.data.display_name);
+      } else {
+         setDeliveryAddress('Pinned Location');
+      }
+    } catch {
+      setDeliveryAddress('Pinned Location');
+    }
+  };
+
+  // Calculate OSRM Route & Price
+  useEffect(() => {
+    const calculateRoute = async () => {
+      if (deliveryOption === 'self_pickup') {
+        setDeliveryCharge(0);
+        setOsrmDistance(null);
+        setDeliveryError('');
+        return;
+      }
+      if (deliveryOption === 'delivery' && deliveryCoordinates && vehicle?.locationCoordinates) {
+        try {
+          const { lng: startLng, lat: startLat } = vehicle.locationCoordinates;
+          const { lng: endLng, lat: endLat } = deliveryCoordinates;
+          
+          const res = await axios.get(
+            `https://router.project-osrm.org/route/v1/driving/${startLng},${startLat};${endLng},${endLat}?overview=false`
+          );
+          
+          if (res.data.routes && res.data.routes.length > 0) {
+            const distanceKm = res.data.routes[0].distance / 1000;
+            setOsrmDistance(distanceKm.toFixed(1));
+            
+            if (distanceKm <= 5) setDeliveryCharge(50);
+            else if (distanceKm <= 10) setDeliveryCharge(100);
+            else if (distanceKm <= 20) setDeliveryCharge(150);
+            else {
+              setDeliveryCharge(0);
+              setDeliveryError('Delivery unavailable for locations > 20km from the vehicle.');
+            }
+          }
+        } catch (err) {
+          console.error(err);
+          setDeliveryError('Failed to calculate route.');
+        }
+      }
+    };
+    calculateRoute();
+  }, [deliveryCoordinates, deliveryOption, vehicle]);
 
   if (loading) {
     return (
@@ -74,11 +229,17 @@ const BookingFlow = () => {
 
   const baseFare = vehicle.pricePerHour * durationHours;
   const platformFee = 5;
-  const taxes = Math.round((baseFare + platformFee) * 0.18);
-  const totalAmount = baseFare + platformFee + taxes;
+  const taxes = Math.round((baseFare + platformFee + deliveryCharge) * 0.18);
+  const totalAmount = baseFare + platformFee + deliveryCharge + taxes;
+
+  const isDeliveryValid = deliveryOption === 'self_pickup' || (deliveryOption === 'delivery' && deliveryCoordinates && !deliveryError);
 
   const handlePayment = async (e) => {
     e.preventDefault();
+    if (!isDeliveryValid) {
+       setError('Please complete delivery details correctly before proceeding.');
+       return;
+    }
     setProcessing(true);
     setError('');
 
@@ -94,7 +255,9 @@ const BookingFlow = () => {
       const orderRes = await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/bookings/create-order`, {
         vehicleId: vehicle._id,
         durationHours,
-        startDate: pickupDate
+        startDate: pickupDate,
+        deliveryOption,
+        deliveryCharge
       }, {
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -119,17 +282,21 @@ const BookingFlow = () => {
               vehicleId: vehicle._id,
               durationHours,
               startDate: pickupDate,
-              totalAmount
+              totalAmount,
+              deliveryOption,
+              deliveryAddress,
+              deliveryCoordinates,
+              deliveryCharge,
+              deliveryDate: deliveryOption === 'delivery' ? pickupDate : undefined,
+              pickupDate: deliveryOption === 'delivery' ? new Date(new Date(pickupDate).getTime() + durationHours * 3600000).toISOString() : undefined
             }, {
               headers: { Authorization: `Bearer ${token}` }
             });
 
             if (verifyRes.status === 200) {
               if (verifyRes.data.autoConfirmed) {
-                // Instant confirmation — go to dashboard
                 navigate('/dashboard/user?tab=bookings&confirmed=1');
               } else {
-                // Manual approval — show waiting screen
                 navigate(`/dashboard/user?tab=bookings&pending=${verifyRes.data.bookingId}`);
               }
             }
@@ -164,7 +331,7 @@ const BookingFlow = () => {
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 pt-32 pb-20 selection:bg-orange-100 selection:text-orange-900 transition-colors duration-300">
-      <div className="container mx-auto px-6 max-w-4xl">
+      <div className="container mx-auto px-6 max-w-6xl">
         <h1 className="text-4xl font-black text-slate-900 dark:text-white mb-10 tracking-tight">Complete your Booking</h1>
         
         {error && (
@@ -173,10 +340,138 @@ const BookingFlow = () => {
           </div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-          {/* Order Summary */}
-          <div>
-            <div className="bg-white dark:bg-zinc-900 p-8 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm mb-6 transition-colors duration-300">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+          
+          <div className="space-y-6">
+            {/* Delivery vs Pickup Toggle */}
+            <div className="bg-white dark:bg-zinc-900 p-8 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm transition-colors duration-300">
+              <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-6">How would you like to get it?</h2>
+              <div className="flex gap-4">
+                <button 
+                  onClick={() => setDeliveryOption('self_pickup')}
+                  className={`flex-1 flex flex-col items-center justify-center p-6 rounded-2xl border-2 transition-all font-bold ${
+                    deliveryOption === 'self_pickup' 
+                    ? 'border-orange-500 bg-orange-50 dark:bg-orange-500/10 text-orange-600 dark:text-orange-500' 
+                    : 'border-zinc-200 dark:border-zinc-700 text-slate-500 hover:border-orange-300'
+                  }`}
+                >
+                  <MapPin className="w-8 h-8 mb-2" />
+                  Self Pickup
+                  <span className="text-xs font-medium text-slate-400 mt-1">Pick it up yourself</span>
+                </button>
+                <button 
+                  onClick={() => setDeliveryOption('delivery')}
+                  className={`flex-1 flex flex-col items-center justify-center p-6 rounded-2xl border-2 transition-all font-bold ${
+                    deliveryOption === 'delivery' 
+                    ? 'border-orange-500 bg-orange-50 dark:bg-orange-500/10 text-orange-600 dark:text-orange-500' 
+                    : 'border-zinc-200 dark:border-zinc-700 text-slate-500 hover:border-orange-300'
+                  }`}
+                >
+                  <Truck className="w-8 h-8 mb-2" />
+                  Delivery
+                  <span className="text-xs font-medium text-slate-400 mt-1">Get it delivered</span>
+                </button>
+              </div>
+
+              {/* Delivery Address & Map */}
+              {deliveryOption === 'delivery' && (
+                <div className="mt-8 space-y-4 animate-fade-in-up">
+                  <div>
+                    <div className="flex justify-between items-center mb-2">
+                      <label className="block text-sm font-bold text-slate-700 dark:text-zinc-300">Delivery Address</label>
+                      <button type="button" onClick={requestGPS} className="text-xs font-bold text-orange-500 hover:underline flex items-center gap-1">
+                        {gpsLoading ? 'Getting GPS...' : '🎯 Use My GPS'}
+                      </button>
+                    </div>
+                    <div className="flex gap-2">
+                      <div className="relative flex-1">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"><Search className="w-4 h-4"/></span>
+                        <input
+                          type="text"
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleLocationSearch())}
+                          placeholder="Search address or pin on map..."
+                          className="w-full pl-9 pr-4 py-3 bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500 transition-colors"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleLocationSearch}
+                        disabled={searching || !searchQuery.trim()}
+                        className="px-4 py-3 bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold rounded-xl hover:bg-orange-500 disabled:opacity-50 transition-colors text-sm"
+                      >
+                        {searching ? '...' : 'Search'}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="h-48 rounded-xl overflow-hidden border border-zinc-200 dark:border-zinc-700 relative z-0">
+                    <MapContainer center={mapCenter} zoom={13} style={{ height: '100%', width: '100%', zIndex: 0 }}>
+                      <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                      <FlyTo center={mapCenter} />
+                      <MapClickPicker onPick={handleMapClick} />
+                      {deliveryCoordinates && <Marker position={[deliveryCoordinates.lat, deliveryCoordinates.lng]} />}
+                    </MapContainer>
+                  </div>
+                  {deliveryCoordinates ? (
+                    <div className="flex justify-between items-center text-sm font-bold text-emerald-600 dark:text-emerald-400">
+                      <span>✅ Address selected</span>
+                      {osrmDistance && <span>{osrmDistance} km from vehicle</span>}
+                    </div>
+                  ) : (
+                    <p className="text-sm font-bold text-amber-500">Please select a delivery location on the map</p>
+                  )}
+
+                  {deliveryError && (
+                    <div className="bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-3 rounded-lg text-sm font-bold mt-2">
+                      {deliveryError}
+                    </div>
+                  )}
+
+                </div>
+              )}
+            </div>
+            
+            {/* Rental Duration Details */}
+            <div className="bg-white dark:bg-zinc-900 p-8 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm transition-colors duration-300">
+              <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-6">Rental Details</h2>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 dark:text-zinc-300 mb-2">Duration</label>
+                  <div className="flex items-center bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3">
+                    <Clock className="w-5 h-5 text-slate-400 mr-2 shrink-0" />
+                    <select 
+                      value={durationHours}
+                      onChange={(e) => setDurationHours(Number(e.target.value))}
+                      className="bg-transparent text-slate-900 dark:text-white font-medium focus:outline-none w-full"
+                    >
+                      <option value="1" className="text-black">1 Hour</option>
+                      <option value="2" className="text-black">2 Hours</option>
+                      <option value="5" className="text-black">5 Hours</option>
+                      <option value="12" className="text-black">12 Hours</option>
+                      <option value="24" className="text-black">24 Hours</option>
+                      <option value="48" className="text-black">48 Hours</option>
+                      <option value="168" className="text-black">7 Days</option>
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-slate-700 dark:text-zinc-300 mb-2">Start Time</label>
+                  <input 
+                    type="datetime-local" 
+                    value={pickupDate}
+                    onChange={(e) => setPickupDate(e.target.value)}
+                    className="w-full bg-zinc-50 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl px-4 py-3 font-medium focus:outline-none focus:border-orange-500 text-slate-900 dark:text-white"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-6">
+            {/* Order Summary */}
+            <div className="bg-white dark:bg-zinc-900 p-8 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm transition-colors duration-300">
               <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-6">Order Summary</h2>
               
               <div className="flex items-center space-x-4 mb-6 pb-6 border-b border-zinc-100 dark:border-zinc-800">
@@ -188,45 +483,25 @@ const BookingFlow = () => {
                 </div>
                 <div>
                   <h3 className="font-black text-slate-900 dark:text-white">{vehicle.name}</h3>
-                  <div className="flex flex-col space-y-2 text-sm font-medium text-slate-500 dark:text-zinc-400 mt-2">
-                    <div className="flex items-center">
-                      <Clock className="w-4 h-4 mr-2" />
-                      <select 
-                        value={durationHours}
-                        onChange={(e) => setDurationHours(Number(e.target.value))}
-                        className="bg-transparent border-b border-zinc-300 dark:border-zinc-700 focus:outline-none focus:border-orange-500"
-                      >
-                        <option value="1" className="text-black">1 Hour</option>
-                        <option value="2" className="text-black">2 Hours</option>
-                        <option value="5" className="text-black">5 Hours</option>
-                        <option value="12" className="text-black">12 Hours</option>
-                        <option value="24" className="text-black">24 Hours</option>
-                        <option value="48" className="text-black">48 Hours</option>
-                        <option value="168" className="text-black">7 Days</option>
-                      </select>
-                    </div>
-                    <div className="flex items-center">
-                      <span className="mr-2">Starts:</span>
-                      <input 
-                        type="datetime-local" 
-                        value={pickupDate}
-                        onChange={(e) => setPickupDate(e.target.value)}
-                        className="bg-transparent font-medium focus:outline-none border-b border-zinc-300 dark:border-zinc-700 focus:border-orange-500"
-                      />
-                    </div>
-                  </div>
+                  <p className="text-sm font-medium text-slate-500 dark:text-zinc-400 mt-1">₹{vehicle.pricePerHour} / hr • {vehicle.type}</p>
                 </div>
               </div>
 
               <div className="space-y-4 text-sm font-bold text-slate-500 dark:text-zinc-400">
                 <div className="flex justify-between">
-                  <span>Base Fare ({durationHours} hr x ₹{vehicle.pricePerHour})</span>
+                  <span>Base Fare ({durationHours} hr)</span>
                   <span>₹{baseFare}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Platform Fee</span>
                   <span>₹{platformFee}</span>
                 </div>
+                {deliveryOption === 'delivery' && (
+                  <div className="flex justify-between text-orange-600 dark:text-orange-500">
+                    <span>Delivery Fee ({osrmDistance ? `${osrmDistance}km` : 'calculating...'})</span>
+                    <span>₹{deliveryCharge}</span>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span>Taxes (18% GST)</span>
                   <span>₹{taxes}</span>
@@ -238,36 +513,28 @@ const BookingFlow = () => {
                 <span>₹{totalAmount}</span>
               </div>
             </div>
-          </div>
 
-          {/* Payment Method */}
-          <div>
+            {/* Payment Method */}
             <div className="bg-white dark:bg-zinc-900 p-8 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm transition-colors duration-300">
               <div className="flex items-center space-x-3 mb-6">
                 <img src="https://razorpay.com/assets/razorpay-logo.svg" alt="Razorpay" className="h-6 filter grayscale dark:invert opacity-70" />
                 <h2 className="text-xl font-bold text-slate-900 dark:text-white">Payment</h2>
               </div>
               
-              <div className="space-y-6">
-                <p className="text-sm font-medium text-slate-500 dark:text-zinc-400 mb-6">
-                  You will be securely redirected to Razorpay to complete your payment via UPI, Credit Card, or Netbanking.
+              <div className="bg-orange-50 dark:bg-orange-500/10 p-4 rounded-xl flex items-start space-x-3 mb-6">
+                <CheckCircle className="w-5 h-5 text-orange-500 shrink-0 mt-0.5" />
+                <p className="text-sm font-medium text-slate-700 dark:text-zinc-300">
+                  Your payment is secure and encrypted.
                 </p>
-
-                <div className="bg-orange-50 dark:bg-orange-500/10 p-4 rounded-xl flex items-start space-x-3 mt-6">
-                  <CheckCircle className="w-5 h-5 text-orange-500 shrink-0 mt-0.5" />
-                  <p className="text-sm font-medium text-slate-700 dark:text-zinc-300">
-                    Your payment is secure and encrypted. You can cancel for free up to 2 hours before the ride.
-                  </p>
-                </div>
-
-                <button 
-                  onClick={handlePayment} 
-                  disabled={processing}
-                  className="w-full py-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold rounded-full hover:bg-orange-500 dark:hover:bg-orange-500 dark:hover:text-white transition-colors shadow-lg mt-8 disabled:opacity-50"
-                >
-                  {processing ? 'Connecting to Razorpay...' : `Pay ₹${totalAmount} & Book`}
-                </button>
               </div>
+
+              <button 
+                onClick={handlePayment} 
+                disabled={processing || !isDeliveryValid}
+                className="w-full py-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold rounded-full hover:bg-orange-500 dark:hover:bg-orange-500 dark:hover:text-white transition-colors shadow-lg disabled:opacity-50"
+              >
+                {processing ? 'Connecting to Razorpay...' : `Pay ₹${totalAmount} & Book`}
+              </button>
             </div>
           </div>
         </div>

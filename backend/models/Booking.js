@@ -28,6 +28,37 @@ const bookingSchema = new mongoose.Schema({
     enum: ['pending', 'confirmed', 'completed', 'cancelled'],
     default: 'pending'
   },
+  deliveryOption: {
+    type: String,
+    enum: ['self_pickup', 'delivery'],
+    default: 'self_pickup'
+  },
+  deliveryAddress: {
+    type: String
+  },
+  deliveryCoordinates: {
+    lat: Number,
+    lng: Number
+  },
+  deliveryCharge: {
+    type: Number,
+    default: 0
+  },
+  deliveryStatus: {
+    type: String,
+    enum: ['pending', 'assigned', 'out_for_delivery', 'delivered', 'pickup_scheduled', 'picked_up', 'completed'],
+    default: 'pending'
+  },
+  assignedDeliveryAgent: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  deliveryDate: {
+    type: Date
+  },
+  pickupDate: {
+    type: Date
+  },
   razorpayOrderId: {
     type: String,
   },

@@ -18,7 +18,7 @@ const razorpay = new Razorpay({
 // @access  Private
 router.post('/create-order', protect, async (req, res) => {
   try {
-    const { vehicleId, durationHours, startDate } = req.body;
+    const { vehicleId, durationHours, startDate, deliveryOption, deliveryCharge = 0 } = req.body;
 
     // Security Check: KYC
     if (req.user.kycStatus !== 'verified') {
@@ -34,11 +34,13 @@ router.post('/create-order', protect, async (req, res) => {
       return res.status(400).json({ message: 'Vehicle is currently unavailable' });
     }
 
-    // Calculate total amount (Base + Platform Fee + 18% Tax)
+    // Calculate total amount (Base + Platform Fee + Delivery Fee + 18% Tax)
     const baseFare = vehicle.pricePerHour * durationHours;
     const platformFee = 5;
-    const taxes = Math.round((baseFare + platformFee) * 0.18);
-    const totalAmount = baseFare + platformFee + taxes;
+    // ensure deliveryCharge is a number
+    const safeDeliveryCharge = deliveryOption === 'delivery' ? Number(deliveryCharge) : 0;
+    const taxes = Math.round((baseFare + platformFee + safeDeliveryCharge) * 0.18);
+    const totalAmount = baseFare + platformFee + safeDeliveryCharge + taxes;
 
     const options = {
       amount: totalAmount * 100, // amount in the smallest currency unit (paise)
@@ -77,7 +79,13 @@ router.post('/verify-payment', protect, async (req, res) => {
       vehicleId,
       durationHours,
       startDate,
-      totalAmount
+      totalAmount,
+      deliveryOption,
+      deliveryAddress,
+      deliveryCoordinates,
+      deliveryCharge,
+      deliveryDate,
+      pickupDate
     } = req.body;
 
     // Verify signature
@@ -106,7 +114,13 @@ router.post('/verify-payment', protect, async (req, res) => {
       totalAmount,
       status: bookingStatus,
       razorpayOrderId: razorpay_order_id,
-      razorpayPaymentId: razorpay_payment_id
+      razorpayPaymentId: razorpay_payment_id,
+      deliveryOption: deliveryOption || 'self_pickup',
+      deliveryAddress,
+      deliveryCoordinates,
+      deliveryCharge: deliveryOption === 'delivery' ? Number(deliveryCharge) : 0,
+      deliveryDate: deliveryDate ? new Date(deliveryDate) : undefined,
+      pickupDate: pickupDate ? new Date(pickupDate) : undefined
     });
 
     await booking.save();

@@ -32,7 +32,7 @@ const Navbar = () => {
           <div className="hidden md:flex items-center space-x-8 text-sm font-semibold text-slate-500 dark:text-zinc-400">
             <Link to="/" className="hover:text-slate-900 dark:hover:text-white transition-colors">Home</Link>
             <Link to="/vehicles" className="hover:text-slate-900 dark:hover:text-white transition-colors">Find Vehicles</Link>
-            <Link to={`/dashboard/${user.role || 'user'}`} className="hover:text-slate-900 dark:hover:text-white transition-colors">My Dashboard</Link>
+            <Link to={user.role === 'delivery_agent' ? '/dashboard/delivery-agent' : `/dashboard/${user.role || 'user'}`} className="hover:text-slate-900 dark:hover:text-white transition-colors">My Dashboard</Link>
           </div>
         ) : (
           !isDashboard && (
