@@ -1,21 +1,28 @@
 import { useState, useEffect } from 'react';
-import { Truck, MapPin, Phone, CheckCircle, Navigation, Clock, Activity, Calendar } from 'lucide-react';
+import { Truck, MapPin, Phone, CheckCircle, XCircle, Navigation, Clock, Activity, Calendar } from 'lucide-react';
 import axios from 'axios';
 
 const DeliveryAgentDashboard = () => {
   const [deliveries, setDeliveries] = useState([]);
+  const [availableDeliveries, setAvailableDeliveries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [activeTab, setActiveTab] = useState('active'); // active, completed
+  const [activeTab, setActiveTab] = useState('available'); // available, active, completed
 
   const fetchDeliveries = async () => {
     setLoading(true);
     try {
       const token = localStorage.getItem('token');
-      const res = await axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/delivery/me`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setDeliveries(res.data);
+      const [assignedRes, availableRes] = await Promise.all([
+        axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/delivery/me`, {
+          headers: { Authorization: `Bearer ${token}` }
+        }),
+        axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/delivery/available`, {
+          headers: { Authorization: `Bearer ${token}` }
+        })
+      ]);
+      setDeliveries(assignedRes.data);
+      setAvailableDeliveries(availableRes.data);
     } catch (err) {
       console.error(err);
       setError('Failed to fetch deliveries');
@@ -40,8 +47,35 @@ const DeliveryAgentDashboard = () => {
     }
   };
 
+  const handleAcceptDelivery = async (id) => {
+    try {
+      const token = localStorage.getItem('token');
+      await axios.put(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/delivery/${id}/accept`, {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      fetchDeliveries();
+      setActiveTab('active');
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to accept delivery');
+      fetchDeliveries();
+    }
+  };
+
+  const handleRejectDelivery = async (id) => {
+    try {
+      const token = localStorage.getItem('token');
+      await axios.put(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/delivery/${id}/reject`, {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setAvailableDeliveries(prev => prev.filter(d => d._id !== id));
+    } catch (err) {
+      console.error('Failed to reject delivery', err);
+    }
+  };
+
   const getNextAction = (status) => {
     switch(status) {
+      case 'pending': return null;
       case 'assigned': return { label: 'Start Delivery', next: 'out_for_delivery', color: 'bg-blue-500 hover:bg-blue-600' };
       case 'out_for_delivery': return { label: 'Mark Delivered', next: 'delivered', color: 'bg-emerald-500 hover:bg-emerald-600' };
       case 'delivered': return { label: 'Start Pickup Journey', next: 'pickup_scheduled', color: 'bg-purple-500 hover:bg-purple-600' };
@@ -54,7 +88,7 @@ const DeliveryAgentDashboard = () => {
   const activeDeliveries = deliveries.filter(d => d.deliveryStatus !== 'completed');
   const completedDeliveries = deliveries.filter(d => d.deliveryStatus === 'completed');
 
-  const displayDeliveries = activeTab === 'active' ? activeDeliveries : completedDeliveries;
+  const displayDeliveries = activeTab === 'available' ? availableDeliveries : activeTab === 'active' ? activeDeliveries : completedDeliveries;
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 p-8 pt-28 selection:bg-orange-100 selection:text-orange-900 transition-colors duration-300">
@@ -66,6 +100,12 @@ const DeliveryAgentDashboard = () => {
           </h1>
           
           <div className="flex bg-white dark:bg-zinc-900 rounded-full p-1 border border-zinc-200 dark:border-zinc-800 shadow-sm">
+            <button
+              onClick={() => setActiveTab('available')}
+              className={`px-6 py-2 rounded-full font-bold text-sm transition-colors ${activeTab === 'available' ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900' : 'text-slate-500 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}
+            >
+              Available ({availableDeliveries.length})
+            </button>
             <button
               onClick={() => setActiveTab('active')}
               className={`px-6 py-2 rounded-full font-bold text-sm transition-colors ${activeTab === 'active' ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900' : 'text-slate-500 hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}
@@ -111,7 +151,7 @@ const DeliveryAgentDashboard = () => {
                     <h3 className="font-black text-lg text-slate-900 dark:text-white">{delivery.vehicle?.name}</h3>
                     <p className="text-sm font-bold text-slate-500 dark:text-zinc-400 mt-1">₹{delivery.deliveryCharge} Fee</p>
                     <span className="mt-4 px-3 py-1 bg-orange-100 dark:bg-orange-500/20 text-orange-600 dark:text-orange-400 font-black text-xs uppercase tracking-wider rounded-lg">
-                      {delivery.deliveryStatus.replace(/_/g, ' ')}
+                      {(delivery.deliveryStatus || 'pending').replace(/_/g, ' ')}
                     </span>
                   </div>
 
@@ -159,7 +199,22 @@ const DeliveryAgentDashboard = () => {
                     </div>
 
                     <div className="mt-auto">
-                      {nextAction ? (
+                      {activeTab === 'available' ? (
+                        <div className="flex gap-4">
+                          <button
+                            onClick={() => handleAcceptDelivery(delivery._id)}
+                            className="flex-1 py-4 bg-emerald-500 hover:bg-emerald-600 text-white font-black rounded-xl transition-colors shadow-md flex items-center justify-center gap-2"
+                          >
+                            <CheckCircle className="w-5 h-5" /> Accept
+                          </button>
+                          <button
+                            onClick={() => handleRejectDelivery(delivery._id)}
+                            className="flex-1 py-4 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-300 font-black rounded-xl transition-colors flex items-center justify-center gap-2"
+                          >
+                            <XCircle className="w-5 h-5" /> Reject
+                          </button>
+                        </div>
+                      ) : nextAction ? (
                         <button
                           onClick={() => handleStatusUpdate(delivery._id, nextAction.next)}
                           className={`w-full py-4 text-white font-black rounded-xl transition-colors shadow-md flex items-center justify-center gap-2 ${nextAction.color}`}

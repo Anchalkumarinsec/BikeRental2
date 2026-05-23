@@ -48,14 +48,21 @@ const UserDashboard = () => {
       showToast('info', `📨 ${message}`);
     };
 
+    const handleDeliveryUpdate = ({ message }) => {
+      showToast('info', `🚚 ${message}`);
+      setActiveTab(prev => prev);
+    };
+
     socket.on('booking-confirmed', handleBookingConfirmed);
     socket.on('booking-rejected', handleBookingRejected);
     socket.on('new-booking-request', handleNewBookingRequest);
+    socket.on('delivery-update', handleDeliveryUpdate);
 
     return () => {
       socket.off('booking-confirmed', handleBookingConfirmed);
       socket.off('booking-rejected', handleBookingRejected);
       socket.off('new-booking-request', handleNewBookingRequest);
+      socket.off('delivery-update', handleDeliveryUpdate);
     };
   }, [socket, user?._id]);
 

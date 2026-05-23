@@ -162,7 +162,7 @@ const AdminDashboard = () => {
                             d.deliveryStatus === 'pending' ? 'bg-amber-100 text-amber-600' :
                             'bg-blue-100 text-blue-600'
                           }`}>
-                            {d.deliveryStatus.replace('_', ' ')}
+                            {(d.deliveryStatus || 'pending').replace(/_/g, ' ')}
                           </span>
                         </td>
                         <td className="py-4 pl-4">

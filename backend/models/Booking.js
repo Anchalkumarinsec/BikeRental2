@@ -81,7 +81,12 @@ const bookingSchema = new mongoose.Schema({
   rideDistanceKm: {
     type: Number,
     default: 0
-  }
+  },
+  // Agents who clicked 'reject' on this delivery so it doesn't show in their available feed
+  rejectedByDeliveryAgents: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }]
 }, { timestamps: true });
 
 const Booking = mongoose.model('Booking', bookingSchema);

@@ -66,10 +66,17 @@ const LenderDashboard = () => {
       fetchData();
     };
 
+    const handleDeliveryUpdate = ({ message }) => {
+      showToast('info', `🚚 ${message}`);
+      fetchData();
+    };
+
     socket.on('new-booking-request', handleNewRequest);
+    socket.on('delivery-update', handleDeliveryUpdate);
     
     return () => {
       socket.off('new-booking-request', handleNewRequest);
+      socket.off('delivery-update', handleDeliveryUpdate);
     };
   }, [socket, user?._id]);
 

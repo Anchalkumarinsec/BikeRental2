@@ -14,6 +14,7 @@ import BookingTracking from './pages/user/BookingTracking';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { NotificationProvider } from './contexts/NotificationContext';
 import AIChatWidget from './components/AIChatWidget';
+import ErrorBoundary from './components/ErrorBoundary';
 
 function App() {
   return (
@@ -23,20 +24,22 @@ function App() {
           <div className="flex flex-col min-h-screen">
             <Navbar />
           <main className="flex-grow">
-            <Routes>
-              <Route path="/" element={<Landing />} />
-              <Route path="/login" element={<Login />} />
-              <Route path="/register" element={<Register />} />
-              <Route path="/dashboard/user" element={<UserDashboard />} />
-              <Route path="/dashboard/lender" element={<LenderDashboard />} />
-              <Route path="/dashboard/admin" element={<AdminDashboard />} />
-              <Route path="/dashboard/delivery-agent" element={<DeliveryAgentDashboard />} />
-              <Route path="/vehicles" element={<VehicleListing />} />
-              <Route path="/vehicles/:id" element={<VehicleDetails />} />
-              <Route path="/book/:id" element={<BookingFlow />} />
-              <Route path="/track/:bookingId" element={<BookingTracking />} />
-              <Route path="/tracking/:bookingId" element={<BookingTracking />} />
-            </Routes>
+            <ErrorBoundary>
+              <Routes>
+                <Route path="/" element={<Landing />} />
+                <Route path="/login" element={<Login />} />
+                <Route path="/register" element={<Register />} />
+                <Route path="/dashboard/user" element={<UserDashboard />} />
+                <Route path="/dashboard/lender" element={<LenderDashboard />} />
+                <Route path="/dashboard/admin" element={<AdminDashboard />} />
+                <Route path="/dashboard/delivery-agent" element={<DeliveryAgentDashboard />} />
+                <Route path="/vehicles" element={<VehicleListing />} />
+                <Route path="/vehicles/:id" element={<VehicleDetails />} />
+                <Route path="/book/:id" element={<BookingFlow />} />
+                <Route path="/track/:bookingId" element={<BookingTracking />} />
+                <Route path="/tracking/:bookingId" element={<BookingTracking />} />
+              </Routes>
+            </ErrorBoundary>
           </main>
             <AIChatWidget />
           </div>
