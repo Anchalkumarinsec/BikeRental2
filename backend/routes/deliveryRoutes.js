@@ -155,6 +155,9 @@ router.put('/:id/accept', protect, deliveryAgentOrAdmin, async (req, res) => {
           message: `A delivery agent has been assigned to pick up ${booking.vehicle.name}.`
         });
       }
+
+      // Tell all other agents this delivery is no longer available
+      io.emit('delivery-claimed', { bookingId: booking._id });
     }
 
     res.json({ message: 'Delivery claimed successfully', booking });

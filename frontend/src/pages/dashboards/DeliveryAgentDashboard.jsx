@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Truck, MapPin, Phone, CheckCircle, XCircle, Navigation, Clock, Activity, Calendar } from 'lucide-react';
 import axios from 'axios';
+import { useNotification } from '../../contexts/NotificationContext';
 
 const DeliveryAgentDashboard = () => {
   const [deliveries, setDeliveries] = useState([]);
@@ -8,6 +9,7 @@ const DeliveryAgentDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState('available'); // available, active, completed
+  const { socket } = useNotification();
 
   const fetchDeliveries = async () => {
     setLoading(true);
@@ -34,6 +36,21 @@ const DeliveryAgentDashboard = () => {
   useEffect(() => {
     fetchDeliveries();
   }, []);
+
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleDeliveryClaimed = ({ bookingId }) => {
+      // Remove it from available deliveries if someone else claimed it
+      setAvailableDeliveries(prev => prev.filter(d => d._id !== bookingId));
+    };
+
+    socket.on('delivery-claimed', handleDeliveryClaimed);
+
+    return () => {
+      socket.off('delivery-claimed', handleDeliveryClaimed);
+    };
+  }, [socket]);
 
   const handleStatusUpdate = async (id, status) => {
     try {
