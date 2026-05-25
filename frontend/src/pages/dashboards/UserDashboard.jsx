@@ -650,23 +650,152 @@ const BookingsTab = () => {
   );
 };
 
-const WalletTab = () => (
-  <div className="space-y-8 animate-fade-in-up">
-    <h1 className="text-4xl font-black text-slate-900 dark:text-white tracking-tight mb-6">Wallet & Credits</h1>
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-      <div className="bg-slate-900 dark:bg-white p-8 rounded-3xl shadow-xl relative overflow-hidden">
-        <div className="absolute top-0 right-0 p-8 opacity-10">
-          <Wallet className="w-32 h-32 text-white dark:text-slate-900" />
+const WalletTab = () => {
+  const [balance, setBalance] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [addAmount, setAddAmount] = useState('');
+  const [withdrawAmount, setWithdrawAmount] = useState('');
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [showAdd, setShowAdd] = useState(false);
+  const [showWithdraw, setShowWithdraw] = useState(false);
+
+  useEffect(() => {
+    const fetchProfile = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        const res = await axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/users/profile`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        setBalance(res.data.walletBalance || 0);
+      } catch (err) {
+        console.error("Failed to load wallet balance", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchProfile();
+  }, []);
+
+  const handleAddFunds = async (e) => {
+    e.preventDefault();
+    if (!addAmount || addAmount <= 0) return alert('Enter a valid amount');
+    setIsProcessing(true);
+    try {
+      const token = localStorage.getItem('token');
+      const orderRes = await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/wallet/add-funds`, { amount: Number(addAmount) }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const order = orderRes.data;
+
+      const options = {
+        key: import.meta.env.VITE_RAZORPAY_KEY_ID || 'rzp_test_Snsc6Pg1LbIYVH',
+        amount: order.amount,
+        currency: order.currency,
+        name: 'BikeRentLelo',
+        description: 'Add Funds to Wallet',
+        order_id: order.id,
+        handler: async (response) => {
+          try {
+            const verifyRes = await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/wallet/verify-payment`, {
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+              amount: addAmount
+            }, {
+              headers: { Authorization: `Bearer ${token}` }
+            });
+            setBalance(verifyRes.data.walletBalance);
+            setShowAdd(false);
+            setAddAmount('');
+            alert('Funds added successfully!');
+          } catch (err) {
+            console.error('Payment verification failed', err);
+            alert('Payment verification failed');
+          }
+        },
+        theme: { color: '#f97316' }
+      };
+      const rzp = new window.Razorpay(options);
+      rzp.on('payment.failed', function (response){
+          alert('Payment Failed: ' + response.error.description);
+      });
+      rzp.open();
+    } catch (err) {
+      console.error('Add Funds Error:', err);
+      alert('Failed to initiate payment: ' + (err.response?.data?.message || err.message));
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleWithdraw = async (e) => {
+    e.preventDefault();
+    if (!withdrawAmount || withdrawAmount <= 0) return alert('Enter a valid amount');
+    if (Number(withdrawAmount) > balance) return alert('Insufficient balance');
+    
+    setIsProcessing(true);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/wallet/withdraw`, { amount: Number(withdrawAmount) }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setBalance(res.data.walletBalance);
+      setShowWithdraw(false);
+      setWithdrawAmount('');
+      alert('Withdrawal successful!');
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.message || 'Failed to withdraw');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  if (loading) return <div className="animate-pulse bg-zinc-200 dark:bg-zinc-800 h-64 rounded-3xl w-full"></div>;
+
+  return (
+    <div className="space-y-8 animate-fade-in-up">
+      <h1 className="text-4xl font-black text-slate-900 dark:text-white tracking-tight mb-6">Wallet & Credits</h1>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="bg-slate-900 dark:bg-white p-8 rounded-3xl shadow-xl relative overflow-hidden">
+          <div className="absolute top-0 right-0 p-8 opacity-10">
+            <Wallet className="w-32 h-32 text-white dark:text-slate-900" />
+          </div>
+          <p className="text-slate-400 dark:text-zinc-500 font-bold uppercase tracking-widest text-sm mb-2">Available Balance</p>
+          <p className="text-5xl font-black text-white dark:text-slate-900 mb-8">₹{balance.toFixed(2)}</p>
+          <div className="flex gap-4 relative z-10 flex-wrap">
+            <button onClick={() => { setShowAdd(!showAdd); setShowWithdraw(false); }} className="px-6 py-3 bg-orange-500 text-white font-bold rounded-xl hover:bg-orange-600 transition-colors">
+              Add Funds
+            </button>
+            <button onClick={() => { setShowWithdraw(!showWithdraw); setShowAdd(false); }} className="px-6 py-3 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-bold rounded-xl hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors border border-zinc-200 dark:border-zinc-700">
+              Withdraw
+            </button>
+          </div>
+          
+          {showAdd && (
+            <form onSubmit={handleAddFunds} className="mt-6 p-4 bg-white/10 dark:bg-slate-900/5 backdrop-blur-sm rounded-2xl border border-white/20 dark:border-slate-900/10">
+              <label className="block text-sm font-bold text-white dark:text-slate-900 mb-2">Amount to Add (₹)</label>
+              <div className="flex gap-2">
+                <input type="number" value={addAmount} onChange={(e) => setAddAmount(e.target.value)} placeholder="0" className="flex-1 px-4 py-2 bg-white rounded-xl text-slate-900 font-bold focus:outline-none focus:ring-2 focus:ring-orange-500 border border-transparent focus:border-orange-500" required />
+                <button type="submit" disabled={isProcessing} className="px-4 py-2 bg-emerald-500 text-white font-bold rounded-xl hover:bg-emerald-600 transition-colors disabled:opacity-50">Pay</button>
+              </div>
+            </form>
+          )}
+
+          {showWithdraw && (
+            <form onSubmit={handleWithdraw} className="mt-6 p-4 bg-white/10 dark:bg-slate-900/5 backdrop-blur-sm rounded-2xl border border-white/20 dark:border-slate-900/10">
+              <label className="block text-sm font-bold text-white dark:text-slate-900 mb-2">Amount to Withdraw (₹)</label>
+              <div className="flex gap-2">
+                <input type="number" value={withdrawAmount} onChange={(e) => setWithdrawAmount(e.target.value)} placeholder="0" max={balance} className="flex-1 px-4 py-2 bg-white rounded-xl text-slate-900 font-bold focus:outline-none focus:ring-2 focus:ring-orange-500 border border-transparent focus:border-orange-500" required />
+                <button type="submit" disabled={isProcessing} className="px-4 py-2 bg-blue-500 text-white font-bold rounded-xl hover:bg-blue-600 transition-colors disabled:opacity-50">Confirm</button>
+              </div>
+            </form>
+          )}
         </div>
-        <p className="text-slate-400 dark:text-zinc-500 font-bold uppercase tracking-widest text-sm mb-2">Available Balance</p>
-        <p className="text-5xl font-black text-white dark:text-slate-900 mb-8">₹450.00</p>
-        <button className="px-6 py-3 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-bold rounded-xl hover:bg-orange-500 dark:hover:bg-orange-500 hover:text-white dark:hover:text-white transition-colors">
-          Add Funds
-        </button>
       </div>
     </div>
-  </div>
-);
+  );
+};
 
 // UI Helpers
 

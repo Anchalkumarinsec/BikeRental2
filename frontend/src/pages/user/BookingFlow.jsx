@@ -47,6 +47,8 @@ const BookingFlow = () => {
   const [pickupDate, setPickupDate] = useState(initialDate);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState('');
+  const [walletBalance, setWalletBalance] = useState(0);
+  const [paymentMethod, setPaymentMethod] = useState('razorpay');
 
   // Delivery States
   const [deliveryOption, setDeliveryOption] = useState('self_pickup');
@@ -83,6 +85,13 @@ const BookingFlow = () => {
         setVehicle(res.data);
         if (res.data.locationCoordinates) {
           setMapCenter([res.data.locationCoordinates.lat, res.data.locationCoordinates.lng]);
+        }
+        const token = localStorage.getItem('token');
+        if (token) {
+          const profileRes = await axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/users/profile`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          setWalletBalance(profileRes.data.walletBalance || 0);
         }
       } catch (err) {
         console.error(err);
@@ -234,7 +243,54 @@ const BookingFlow = () => {
 
   const isDeliveryValid = deliveryOption === 'self_pickup' || (deliveryOption === 'delivery' && deliveryCoordinates && !deliveryError);
 
-  const handlePayment = async (e) => {
+  const handleWalletPayment = async (e) => {
+    e.preventDefault();
+    if (!isDeliveryValid) {
+       setError('Please complete delivery details correctly before proceeding.');
+       return;
+    }
+    if (walletBalance < totalAmount) {
+       setError('Insufficient wallet balance. Please add funds or use Razorpay.');
+       return;
+    }
+    setProcessing(true);
+    setError('');
+
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) return setError('Please log in to book a vehicle');
+
+      const verifyRes = await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/bookings/pay-wallet`, {
+        vehicleId: vehicle._id,
+        durationHours,
+        startDate: pickupDate,
+        totalAmount,
+        deliveryOption,
+        deliveryAddress,
+        deliveryCoordinates,
+        deliveryCharge,
+        deliveryDate: deliveryOption === 'delivery' ? pickupDate : undefined,
+        pickupDate: deliveryOption === 'delivery' ? new Date(new Date(pickupDate).getTime() + durationHours * 3600000).toISOString() : undefined
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (verifyRes.status === 200) {
+        if (verifyRes.data.autoConfirmed) {
+          navigate('/dashboard/user?tab=bookings&confirmed=1');
+        } else {
+          navigate(`/dashboard/user?tab=bookings&pending=${verifyRes.data.bookingId}`);
+        }
+      }
+    } catch (err) {
+      console.error(err);
+      setError(err.response?.data?.message || 'Wallet payment failed');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handleRazorpayPayment = async (e) => {
     e.preventDefault();
     if (!isDeliveryValid) {
        setError('Please complete delivery details correctly before proceeding.');
@@ -517,23 +573,50 @@ const BookingFlow = () => {
             {/* Payment Method */}
             <div className="bg-white dark:bg-zinc-900 p-8 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm transition-colors duration-300">
               <div className="flex items-center space-x-3 mb-6">
-                <img src="https://razorpay.com/assets/razorpay-logo.svg" alt="Razorpay" className="h-6 filter grayscale dark:invert opacity-70" />
-                <h2 className="text-xl font-bold text-slate-900 dark:text-white">Payment</h2>
+                <CreditCard className="w-6 h-6 text-orange-500" />
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white">Payment Method</h2>
               </div>
               
-              <div className="bg-orange-50 dark:bg-orange-500/10 p-4 rounded-xl flex items-start space-x-3 mb-6">
-                <CheckCircle className="w-5 h-5 text-orange-500 shrink-0 mt-0.5" />
-                <p className="text-sm font-medium text-slate-700 dark:text-zinc-300">
-                  Your payment is secure and encrypted.
-                </p>
+              <div className="flex flex-col gap-3 mb-6">
+                <label className={`flex items-center p-4 border-2 rounded-2xl cursor-pointer transition-colors ${paymentMethod === 'razorpay' ? 'border-orange-500 bg-orange-50 dark:bg-orange-500/10' : 'border-zinc-200 dark:border-zinc-700 hover:border-orange-300'}`}>
+                  <input type="radio" name="paymentMethod" value="razorpay" checked={paymentMethod === 'razorpay'} onChange={() => setPaymentMethod('razorpay')} className="mr-3" />
+                  <div className="flex items-center gap-2">
+                    <img src="https://razorpay.com/assets/razorpay-logo.svg" alt="Razorpay" className="h-5 filter grayscale dark:invert opacity-70" />
+                    <span className="font-bold text-slate-900 dark:text-white">Razorpay</span>
+                  </div>
+                </label>
+                <label className={`flex items-center p-4 border-2 rounded-2xl cursor-pointer transition-colors ${paymentMethod === 'wallet' ? 'border-orange-500 bg-orange-50 dark:bg-orange-500/10' : 'border-zinc-200 dark:border-zinc-700 hover:border-orange-300'}`}>
+                  <input type="radio" name="paymentMethod" value="wallet" checked={paymentMethod === 'wallet'} onChange={() => setPaymentMethod('wallet')} className="mr-3" />
+                  <div className="flex flex-col">
+                    <span className="font-bold text-slate-900 dark:text-white">Pay from Wallet</span>
+                    <span className="text-xs font-semibold text-slate-500">Available Balance: ₹{walletBalance.toFixed(2)}</span>
+                  </div>
+                </label>
               </div>
 
+              {paymentMethod === 'razorpay' && (
+                <div className="bg-orange-50 dark:bg-orange-500/10 p-4 rounded-xl flex items-start space-x-3 mb-6">
+                  <CheckCircle className="w-5 h-5 text-orange-500 shrink-0 mt-0.5" />
+                  <p className="text-sm font-medium text-slate-700 dark:text-zinc-300">
+                    Your payment is secure and encrypted.
+                  </p>
+                </div>
+              )}
+
+              {paymentMethod === 'wallet' && walletBalance < totalAmount && (
+                <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-xl flex items-start space-x-3 mb-6">
+                  <p className="text-sm font-bold text-red-600 dark:text-red-400">
+                    Insufficient balance. Please add funds to your wallet or use Razorpay.
+                  </p>
+                </div>
+              )}
+
               <button 
-                onClick={handlePayment} 
-                disabled={processing || !isDeliveryValid}
+                onClick={paymentMethod === 'wallet' ? handleWalletPayment : handleRazorpayPayment} 
+                disabled={processing || !isDeliveryValid || (paymentMethod === 'wallet' && walletBalance < totalAmount)}
                 className="w-full py-4 bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold rounded-full hover:bg-orange-500 dark:hover:bg-orange-500 dark:hover:text-white transition-colors shadow-lg disabled:opacity-50"
               >
-                {processing ? 'Connecting to Razorpay...' : `Pay ₹${totalAmount} & Book`}
+                {processing ? 'Processing...' : `Pay ₹${totalAmount} & Book`}
               </button>
             </div>
           </div>

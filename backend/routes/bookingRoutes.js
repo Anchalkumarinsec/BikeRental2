@@ -175,6 +175,117 @@ router.post('/verify-payment', protect, async (req, res) => {
   }
 });
 
+// @route   POST /api/bookings/pay-wallet
+// @desc    Pay for a booking using wallet balance
+// @access  Private
+router.post('/pay-wallet', protect, async (req, res) => {
+  try {
+    const {
+      vehicleId,
+      durationHours,
+      startDate,
+      totalAmount,
+      deliveryOption,
+      deliveryAddress,
+      deliveryCoordinates,
+      deliveryCharge,
+      deliveryDate,
+      pickupDate
+    } = req.body;
+
+    // Security Check: KYC
+    if (req.user.kycStatus !== 'verified') {
+      return res.status(403).json({ message: 'KYC not verified. Please verify your identity first.' });
+    }
+
+    // Check Wallet Balance
+    const user = await require('../models/User').findById(req.user._id);
+    if ((user.walletBalance || 0) < totalAmount) {
+      return res.status(400).json({ message: 'Insufficient wallet balance' });
+    }
+
+    // Fetch vehicle
+    const vehicle = await Vehicle.findById(vehicleId).populate('vendorId', '_id name');
+    if (!vehicle) return res.status(404).json({ message: 'Vehicle not found' });
+    if (!vehicle.isAvailable) return res.status(400).json({ message: 'Vehicle is currently unavailable' });
+
+    // Deduct Balance
+    user.walletBalance -= totalAmount;
+    await user.save();
+
+    const autoConfirmed = vehicle.autoConfirm === true;
+    const bookingStatus = autoConfirmed ? 'confirmed' : 'pending';
+
+    const booking = new Booking({
+      user: req.user._id,
+      vehicle: vehicleId,
+      startDate: startDate ? new Date(startDate) : new Date(),
+      durationHours,
+      totalAmount,
+      status: bookingStatus,
+      razorpayOrderId: 'WALLET_' + Date.now(),
+      razorpayPaymentId: 'WALLET_' + Date.now(),
+      deliveryOption: deliveryOption || 'self_pickup',
+      deliveryAddress,
+      deliveryCoordinates,
+      deliveryCharge: deliveryOption === 'delivery' ? Number(deliveryCharge) : 0,
+      deliveryDate: deliveryDate ? new Date(deliveryDate) : undefined,
+      pickupDate: pickupDate ? new Date(pickupDate) : undefined
+    });
+
+    await booking.save();
+
+    const io = req.app.get('io');
+
+    if (autoConfirmed) {
+      // Mark vehicle unavailable immediately
+      await Vehicle.findByIdAndUpdate(vehicleId, { isAvailable: false });
+      // Notify user of instant confirmation
+      if (io) io.to(`user-${req.user._id}`).emit('booking-confirmed', {
+        bookingId: booking._id,
+        vehicleName: vehicle.name,
+        message: `Your booking for ${vehicle.name} is confirmed!`
+      });
+      await sendNotification(req.app, {
+        recipient: req.user._id,
+        type: 'booking',
+        title: 'Booking Confirmed',
+        content: `Your booking for ${vehicle.name} is confirmed!`,
+        link: '/dashboard/user'
+      });
+    } else {
+      // Notify lender of new pending request
+      if (io && vehicle.vendorId?._id) {
+        io.to(`user-${vehicle.vendorId._id}`).emit('new-booking-request', {
+          bookingId: booking._id,
+          vehicleName: vehicle.name,
+          userName: req.user.name,
+          message: `New booking request for ${vehicle.name}`
+        });
+        await sendNotification(req.app, {
+          recipient: vehicle.vendorId._id,
+          type: 'booking',
+          title: 'New Booking Request',
+          content: `${req.user.name} wants to book your ${vehicle.name}`,
+          link: '/dashboard/lender'
+        });
+      }
+    }
+
+    return res.status(200).json({
+      message: autoConfirmed ? "Booking confirmed!" : "Payment processed. Awaiting lender confirmation.",
+      bookingId: booking._id,
+      status: bookingStatus,
+      autoConfirmed,
+      walletBalance: user.walletBalance
+    });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Wallet payment failed' });
+  }
+});
+
 // @route   GET /api/bookings/my-bookings
 // @desc    Get logged in user's bookings
 // @access  Private

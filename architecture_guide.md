@@ -141,10 +141,10 @@ The backend services are designed for heavy workloads, real-time events, securit
    * **Why it's used**: Uploads vehicle listing photographs and user KYC verification documents (Aadhaar/DL) securely to local server disk storage.
    * **Official Docs**: [Multer GitHub](https://github.com/expressjs/multer)
 
-7. **Nodemailer (`nodemailer`)**
-   * **What it is**: A Node.js module to send SMTP emails.
-   * **Why it's used**: Distributes security OTPs during registration/login and booking receipts using secure Gmail SMTP servers.
-   * **Official Docs**: [Nodemailer Documentation](https://nodemailer.com/)
+7. **Brevo Transactional Email API (`sib-api-v3-sdk`)**
+   * **What it is**: High-deliverability transactional email service.
+   * **Why it's used**: Replaces standard SMTP to distribute security OTPs during registration/login and booking receipts reliably and quickly without standard spam filters blocking them.
+   * **Official Docs**: [Brevo API Documentation](https://developers.brevo.com/)
 
 ---
 
@@ -227,12 +227,16 @@ This sets the Node runtime to resolve MongoDB connection URIs via Google's Publi
 
 ---
 
-### E. Delivery Agent Orchestration Lifecycle
-Deliveries utilize an advanced transactional workflow:
-1. **Assign**: Admin selects an available agent, changing the booking status to `assigned` and sending a notification.
-2. **Transit**:
+### E. Decentralized Delivery Orchestration Lifecycle (Uber-Style)
+Deliveries utilize an advanced decentralized claiming workflow, shifting assignment power from admins to the agents themselves:
+1. **Global Pool & Real-Time Broadcasts**: When a user selects delivery, the unassigned booking enters a global pool. It appears instantly on the "Available" tab of all Delivery Agents.
+2. **Claiming Engine**:
+   - An agent can click **Reject**, adding their ID to a `rejectedByDeliveryAgents` schema array. This hides the delivery locally without affecting other agents.
+   - An agent can click **Accept**, locking the delivery to their account. The backend immediately fires a `delivery-claimed` Socket.IO event, which causes the request to instantly vanish from all other agents' screens in real-time.
+3. **Transit & Live Notifications**:
    $$\text{assigned} \longrightarrow \text{out\_for\_delivery} \longrightarrow \text{delivered} \longrightarrow \text{pickup\_scheduled} \longrightarrow \text{picked\_up} \longrightarrow \text{completed}$$
-3. **Tracking**: The agent's dashboard provides simple one-click buttons to cycle states and includes deep Google Maps integration:
+   At every state change, the backend simultaneously emits a `delivery-update` Socket.IO event to **both the Renter and the Lender**, creating a fully synchronized ecosystem.
+4. **Tracking**: The agent's dashboard provides simple one-click buttons to cycle states and includes deep Google Maps integration:
    ```html
    <a href="https://www.google.com/maps/dir/?api=1&destination=lat,lng" target="_blank">View on Maps</a>
    ```

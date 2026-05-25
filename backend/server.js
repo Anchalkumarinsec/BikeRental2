@@ -34,6 +34,7 @@ app.use('/api/ai', require('./routes/aiRoutes'));
 app.use('/api/messages', require('./routes/messageRoutes'));
 app.use('/api/notifications', require('./routes/notificationRoutes'));
 app.use('/api/delivery', require('./routes/deliveryRoutes'));
+app.use('/api/wallet', require('./routes/walletRoutes'));
 
 // Serve static files
 const path = require('path');

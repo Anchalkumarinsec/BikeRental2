@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom';
 import axios from 'axios';
 
 const VehicleListing = () => {
-  const [vehicles, setVehicles] = useState([]);
+  const [allVehicles, setAllVehicles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   
@@ -24,44 +24,24 @@ const VehicleListing = () => {
 
   const PRICE_MAX = 500;
 
-  const fetchVehicles = async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const params = new URLSearchParams();
-
-      const types = [];
-      if (filters.electric) types.push('Electric Scooter');
-      if (filters.motorbike) types.push('Motorbike');
-      if (types.length > 0) params.append('type', types.join(','));
-
-      if (searchQuery) params.append('search', searchQuery);
-
-      // Only apply maxPrice filter when the slider is not at the maximum
-      if (filters.maxPrice < PRICE_MAX) {
-        params.append('maxPrice', filters.maxPrice);
-      }
-
-      const res = await axios.get(`${import.meta.env.VITE_API_URL || `${import.meta.env.VITE_API_URL || 'http://localhost:5000'}`}/api/vehicles?${params.toString()}`, {
-        timeout: 10000  // 10 second timeout to prevent infinite loading
-      });
-      setVehicles(res.data);
-    } catch (err) {
-      console.error(err);
-      setError(err.code === 'ECONNABORTED' ? 'Request timed out. Is the server running?' : 'Failed to load vehicles. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    // Debounce the API call slightly when typing/sliding
-    const delayDebounceFn = setTimeout(() => {
-      fetchVehicles();
-    }, 300);
-
-    return () => clearTimeout(delayDebounceFn);
-  }, [searchQuery, filters]);
+    const fetchAllVehicles = async () => {
+      setLoading(true);
+      setError('');
+      try {
+        const res = await axios.get(`${import.meta.env.VITE_API_URL || 'http://localhost:5000'}/api/vehicles`, {
+          timeout: 10000
+        });
+        setAllVehicles(res.data);
+      } catch (err) {
+        console.error(err);
+        setError(err.code === 'ECONNABORTED' ? 'Request timed out. Is the server running?' : 'Failed to load vehicles. Please try again.');
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchAllVehicles();
+  }, []);
 
   const handleFilterChange = (e) => {
     const { name, checked, value, type } = e.target;
@@ -95,10 +75,30 @@ const VehicleListing = () => {
     setAiRecommendedIds([]);
   };
 
-  // Filter vehicles by AI recommendation if active
-  const displayedVehicles = aiRecommendedIds.length > 0 
-    ? vehicles.filter(v => aiRecommendedIds.includes(v._id))
-    : vehicles;
+  // Filter vehicles locally
+  let displayedVehicles = allVehicles.filter(v => {
+    // 1. Filter by AI Recommendations if active
+    if (aiRecommendedIds.length > 0 && !aiRecommendedIds.includes(v._id)) return false;
+
+    // 2. Filter by Vehicle Type
+    const types = [];
+    if (filters.electric) types.push('Electric Scooter');
+    if (filters.motorbike) types.push('Motorbike');
+    if (types.length > 0 && !types.includes(v.type)) return false;
+
+    // 3. Filter by Max Price
+    if (filters.maxPrice < PRICE_MAX && v.pricePerHour > filters.maxPrice) return false;
+
+    // 4. Filter by Search Query
+    if (searchQuery) {
+      const searchLower = searchQuery.toLowerCase();
+      const nameMatch = v.name.toLowerCase().includes(searchLower);
+      const locationMatch = v.location && v.location.toLowerCase().includes(searchLower);
+      if (!nameMatch && !locationMatch) return false;
+    }
+
+    return true;
+  });
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 pt-28 pb-20 selection:bg-orange-100 selection:text-orange-900 transition-colors duration-300">
